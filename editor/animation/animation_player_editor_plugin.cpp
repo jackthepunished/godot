@@ -35,6 +35,7 @@
 #include "core/os/keyboard.h"
 #include "editor/animation/animation_tree_editor_plugin.h"
 #include "editor/docks/editor_dock_manager.h"
+#include "editor/docks/filesystem_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
@@ -2331,8 +2332,44 @@ void AnimationPlayerEditorPlugin::_notification(int p_what) {
 			InspectorDock::get_inspector_singleton()->connect(SNAME("property_keyed"), callable_mp(this, &AnimationPlayerEditorPlugin::_property_keyed));
 			anim_editor->get_track_editor()->connect(SNAME("keying_changed"), callable_mp(this, &AnimationPlayerEditorPlugin::_update_keying));
 			InspectorDock::get_inspector_singleton()->connect(SNAME("edited_object_changed"), callable_mp(anim_editor->get_track_editor(), &AnimationTrackEditor::update_keying));
+			FileSystemDock::get_singleton()->connect(SNAME("file_removed"), callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
 			set_force_draw_over_forwarding_enabled();
 		} break;
+	}
+}
+
+void AnimationPlayerEditorPlugin::_file_removed(const String &p_file) {
+	// Clear undo history to prevent ghost dependencies from deleted resources.
+	if (!player) {
+		return;
+	}
+
+	String ext = p_file.get_extension().to_lower();
+	bool is_resource_file = ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "webp" ||
+			ext == "svg" || ext == "bmp" || ext == "tga" || ext == "hdr" ||
+			ext == "exr" || ext == "tres" || ext == "res" || ext == "scn" ||
+			ext == "tscn" || ext == "wav" || ext == "ogg" || ext == "mp3";
+
+	if (!is_resource_file) {
+		return;
+	}
+
+	StringName current_anim_name = player->get_assigned_animation();
+	if (current_anim_name == StringName()) {
+		return;
+	}
+
+	Ref<Animation> current_anim = player->get_animation(current_anim_name);
+	if (current_anim.is_null()) {
+		return;
+	}
+
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->clear_history(undo_redo->get_history_id_for_object(current_anim.ptr()));
+
+	AnimationTrackEditor *te = anim_editor->get_track_editor();
+	if (te) {
+		undo_redo->clear_history(undo_redo->get_history_id_for_object(te));
 	}
 }
 
