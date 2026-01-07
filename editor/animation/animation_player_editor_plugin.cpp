@@ -2332,8 +2332,16 @@ void AnimationPlayerEditorPlugin::_notification(int p_what) {
 			InspectorDock::get_inspector_singleton()->connect(SNAME("property_keyed"), callable_mp(this, &AnimationPlayerEditorPlugin::_property_keyed));
 			anim_editor->get_track_editor()->connect(SNAME("keying_changed"), callable_mp(this, &AnimationPlayerEditorPlugin::_update_keying));
 			InspectorDock::get_inspector_singleton()->connect(SNAME("edited_object_changed"), callable_mp(anim_editor->get_track_editor(), &AnimationTrackEditor::update_keying));
-			FileSystemDock::get_singleton()->connect(SNAME("file_removed"), callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
+			if (!EditorNode::get_singleton()->is_headless()) {
+				EditorNode::get_singleton()->get_filesystem_dock()->connect("file_removed", callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
+			}
 			set_force_draw_over_forwarding_enabled();
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
+			if (!EditorNode::get_singleton()->is_headless()) {
+				EditorNode::get_singleton()->get_filesystem_dock()->disconnect("file_removed", callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
+			}
 		} break;
 	}
 }
@@ -2344,29 +2352,24 @@ void AnimationPlayerEditorPlugin::_file_removed(const String &p_file) {
 		return;
 	}
 
-	String ext = p_file.get_extension().to_lower();
-	bool is_resource_file = ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "webp" ||
-			ext == "svg" || ext == "bmp" || ext == "tga" || ext == "hdr" ||
-			ext == "exr" || ext == "tres" || ext == "res" || ext == "scn" ||
-			ext == "tscn" || ext == "wav" || ext == "ogg" || ext == "mp3";
-
-	if (!is_resource_file) {
-		return;
-	}
-
-	StringName current_anim_name = player->get_assigned_animation();
-	if (current_anim_name == StringName()) {
-		return;
-	}
-
-	Ref<Animation> current_anim = player->get_animation(current_anim_name);
-	if (current_anim.is_null()) {
+	// Only clear history if the deleted file is actually a resource type.
+	// This avoids unnecessary clearing for text files, scripts, etc.
+	if (ResourceLoader::get_resource_type(p_file).is_empty()) {
 		return;
 	}
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
-	undo_redo->clear_history(undo_redo->get_history_id_for_object(current_anim.ptr()));
 
+	// Clear history for all animations in the player, as any of them might have referencing undo history.
+	List<StringName> anim_list = player->get_animation_list();
+	for (const StringName &anim_name : anim_list) {
+		Ref<Animation> anim = player->get_animation(anim_name);
+		if (anim.is_valid()) {
+			undo_redo->clear_history(undo_redo->get_history_id_for_object(anim.ptr()));
+		}
+	}
+
+	// Also clear the track editor history.
 	AnimationTrackEditor *te = anim_editor->get_track_editor();
 	if (te) {
 		undo_redo->clear_history(undo_redo->get_history_id_for_object(te));
