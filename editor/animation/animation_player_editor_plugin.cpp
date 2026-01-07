@@ -2332,15 +2332,15 @@ void AnimationPlayerEditorPlugin::_notification(int p_what) {
 			InspectorDock::get_inspector_singleton()->connect(SNAME("property_keyed"), callable_mp(this, &AnimationPlayerEditorPlugin::_property_keyed));
 			anim_editor->get_track_editor()->connect(SNAME("keying_changed"), callable_mp(this, &AnimationPlayerEditorPlugin::_update_keying));
 			InspectorDock::get_inspector_singleton()->connect(SNAME("edited_object_changed"), callable_mp(anim_editor->get_track_editor(), &AnimationTrackEditor::update_keying));
-			if (!EditorNode::get_singleton()->is_headless()) {
-				EditorNode::get_singleton()->get_filesystem_dock()->connect("file_removed", callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
+			if (FileSystemDock::get_singleton()) {
+				FileSystemDock::get_singleton()->connect("file_removed", callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
 			}
 			set_force_draw_over_forwarding_enabled();
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
-			if (!EditorNode::get_singleton()->is_headless()) {
-				EditorNode::get_singleton()->get_filesystem_dock()->disconnect("file_removed", callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
+			if (FileSystemDock::get_singleton()) {
+				FileSystemDock::get_singleton()->disconnect("file_removed", callable_mp(this, &AnimationPlayerEditorPlugin::_file_removed));
 			}
 		} break;
 	}
@@ -2361,7 +2361,8 @@ void AnimationPlayerEditorPlugin::_file_removed(const String &p_file) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 
 	// Clear history for all animations in the player, as any of them might have referencing undo history.
-	List<StringName> anim_list = player->get_animation_list();
+	List<StringName> anim_list;
+	player->get_animation_list(&anim_list);
 	for (const StringName &anim_name : anim_list) {
 		Ref<Animation> anim = player->get_animation(anim_name);
 		if (anim.is_valid()) {
